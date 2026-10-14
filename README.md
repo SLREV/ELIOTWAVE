@@ -1,8 +1,8 @@
 # ELIOTWAVE
 
-Expert Advisor **MetaTrader 5** dengan strategi **Elliott Wave ABC**.
+Strategi **Elliott Wave ABC** untuk **MetaTrader 5** dan **TradingView (Pine Script)**.
 
-Indikator otomatis menandai gelombang A–B–C, memproyeksikan **zona Fibonacci Wave C**, lalu EA masuk pasar hanya ketika **harga memantul di area C**.
+Indikator otomatis menandai gelombang A–B–C, memproyeksikan **zona Fibonacci Wave C**, lalu EA / strategy masuk pasar hanya ketika **harga memantul di area C**.
 
 ```
         A                         SELL C
@@ -21,8 +21,10 @@ Indikator otomatis menandai gelombang A–B–C, memproyeksikan **zona Fibonacci
 | File | Peran |
 | --- | --- |
 | `MQL5/Include/EliotWaveABC.mqh` | Mesin deteksi swing, pola ABC, zona C, pantulan |
-| `MQL5/Indicators/EliotWaveABC.mq5` | Indikator chart: gelombang, Fibonacci C, panah pantulan |
-| `MQL5/Experts/EliotWaveABC_EA.mq5` | Expert Advisor: entri otomatis di pantulan C |
+| `MQL5/Indicators/EliotWaveABC.mq5` | Indikator MT5: gelombang, Fibonacci C, panah pantulan |
+| `MQL5/Experts/EliotWaveABC_EA.mq5` | Expert Advisor MT5: entri otomatis di pantulan C |
+| `TradingView/EliotWaveABC_Indicator.pine` | Indikator TradingView + alert pantulan C |
+| `TradingView/EliotWaveABC_Strategy.pine` | Strategy TradingView (backtest & alert) |
 
 ---
 
@@ -69,6 +71,29 @@ Wave A dan B memakai swing yang **sudah terkonfirmasi** (kedalaman `InpDepth` ba
    - Pasang EA **EliotWaveABC_EA**, centang **Allow Algo Trading**, nyalakan tombol **Algo Trading**.
 
 EA sudah menggambar gelombang sendiri. Indikator opsional jika Anda hanya ingin melihat pola tanpa auto-trade.
+
+---
+
+## Instalasi di TradingView
+
+Dua skrip Pine v5, aturan ABC-nya sama dengan EA MT5.
+
+### Indikator (lihat gelombang + alert)
+
+1. Buka [TradingView](https://www.tradingview.com) → chart → **Pine Editor**.
+2. Buka file `TradingView/EliotWaveABC_Indicator.pine`, salin seluruh isi.
+3. Tempel di Pine Editor → **Save** → **Add to chart**.
+4. Alert: klik **Alert** pada indikator, pilih *Pantulan C BUY* atau *Pantulan C SELL*, kondisi **Once Per Bar Close**.
+
+### Strategy (backtest + entri otomatis di simulator)
+
+1. Pine Editor → tempel `TradingView/EliotWaveABC_Strategy.pine`.
+2. **Add to chart**, buka tab **Strategy Tester**.
+3. Optional: buat alert dari strategy untuk webhook / notifikasi.
+
+Jangan pasang indikator dan strategy sekaligus di chart yang sama (gambar wave dobel). Pilih salah satu.
+
+Timeframe yang masuk akal: **15m, 1h, 4h**.
 
 ---
 
@@ -119,12 +144,13 @@ Tidak ada entri di Wave A atau B. **Hanya area C, dan hanya setelah pantulan.**
 
 ## Backtest
 
-Strategy Tester MT5:
+**MetaTrader 5** — Strategy Tester:
 
 - Model: **Every tick based on real ticks** jika tersedia, atau **1 minute OHLC**.
 - Period: minimal 1 tahun.
-- Deposit dan leverage sesuai akun Anda.
 - Optimasi yang paling berpengaruh: `InpDepth`, `InpCFibMin`, `InpCFibMax`, `InpBounceMode`, timeframe.
+
+**TradingView** — Strategy Tester pada `EliotWaveABC_Strategy.pine`, commission sesuai broker Anda.
 
 Hasil backtest bukan jaminan hasil live. Elliott Wave bersifat diskresioner; versi ini adalah aturan kuantitatif dari zigzag ABC.
 
