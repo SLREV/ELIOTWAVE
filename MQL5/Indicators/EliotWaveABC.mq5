@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "ELIOTWAVE"
 #property version     "1.00"
-#property description "Deteksi otomatis pola Elliott Wave ABC. Zona Fibonacci Wave C dan sinyal pantulan harga untuk entri."
+#property description "Elliott Wave ABC: zona entri LONG/SHORT di Wave C, SL, TP1 0.618C / TP2 Wave B / TP3 Wave A, RR struktural."
 #property indicator_chart_window
 #property indicator_buffers 2
 #property indicator_plots   2
@@ -45,6 +45,9 @@ input int              InpRSIPeriod     = 14;      // Periode RSI
 input double           InpRSIBuyMax     = 40.0;    // RSI max untuk BUY
 input double           InpRSISellMin    = 60.0;    // RSI min untuk SELL
 input bool             InpClosedBar     = true;    // Sinyal di bar tertutup
+
+input group "=== Entri / SL / TP ==="
+input double           InpSLAtr         = 0.35;    // Buffer SL (x ATR)
 
 input group "=== Tampilan ==="
 input bool             InpShowFibo      = true;    // Tampilkan Fibonacci C
@@ -93,6 +96,7 @@ int OnInit()
    g_cfg.rsiBuyMax     = InpRSIBuyMax;
    g_cfg.rsiSellMin    = InpRSISellMin;
    g_cfg.closedBar     = InpClosedBar;
+   g_cfg.slAtr         = InpSLAtr;
    g_cfg.colorA        = InpColorA;
    g_cfg.colorB        = InpColorB;
    g_cfg.colorC        = InpColorC;

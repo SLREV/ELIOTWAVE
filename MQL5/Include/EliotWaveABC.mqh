@@ -189,6 +189,9 @@ private:
    double AtrSafe(const int i);
    double ComputeSL(const ENUM_EWA_DIR dir, const int i, const double entry);
    double ComputeTP(const ENUM_EWA_DIR dir, const double entry, const double sl);
+   void   FillTradePlan(double &entry, double &sl, double &tp1, double &tp2, double &tp3);
+   void   DrawRay(const long chartId, const string name, const datetime t1, const datetime t2,
+                  const double price, const color clr, const string text, const int width);
    void   ClearPattern(void);
    void   DeletePrefix(const long chartId, const string prefix);
 
@@ -804,6 +807,77 @@ double CEliotWaveABC::AtrSafe(const int i)
    return (m_atr[i] > 0.0 ? m_atr[i] : 0.0);
   }
 
+void CEliotWaveABC::FillTradePlan(double &entry, double &sl, double &tp1, double &tp2, double &tp3)
+  {
+   entry = 0;
+   sl = 0;
+   tp1 = 0;
+   tp2 = 0;
+   tp3 = 0;
+   if(!m_pat.valid)
+      return;
+
+   const double atr = AtrSafe(0);
+   const double buf = (atr > 0.0 ? atr * m_cfg.slAtr : m_pat.waveA * 0.05);
+   const bool   buy = (m_pat.dir == EWA_BUY);
+   const bool   inZ = buy
+                      ? (m_close[0] <= m_pat.zone_high && m_close[0] >= m_pat.zone_low)
+                      : (m_close[0] >= m_pat.zone_low && m_close[0] <= m_pat.zone_high);
+
+   if(m_sig.valid)
+      entry = m_sig.entry;
+   else if(inZ)
+      entry = m_close[0];
+   else
+      entry = m_pat.c_100;
+
+   double cEnd = m_pat.c_extreme;
+   double cLen = buy ? (m_pat.b_end - cEnd) : (cEnd - m_pat.b_end);
+   if(cLen <= 0.0)
+     {
+      cEnd = m_pat.c_100;
+      cLen = m_pat.waveA;
+     }
+
+   if(buy)
+     {
+      sl  = MathMin(m_pat.c_extreme, m_pat.zone_low) - buf;
+      tp1 = cEnd + cLen * 0.618;
+      tp2 = m_pat.b_end;
+      tp3 = m_pat.a_start;
+      if(sl >= entry)
+         sl = entry - buf;
+     }
+   else
+     {
+      sl  = MathMax(m_pat.c_extreme, m_pat.zone_high) + buf;
+      tp1 = cEnd - cLen * 0.618;
+      tp2 = m_pat.b_end;
+      tp3 = m_pat.a_start;
+      if(sl <= entry)
+         sl = entry + buf;
+     }
+  }
+
+void CEliotWaveABC::DrawRay(const long chartId, const string name, const datetime t1, const datetime t2,
+                            const double price, const color clr, const string text, const int width)
+  {
+   ObjectCreate(chartId, name, OBJ_TREND, 0, t1, price, t2, price);
+   ObjectSetInteger(chartId, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(chartId, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(chartId, name, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(chartId, name, OBJPROP_RAY_RIGHT, true);
+   ObjectSetInteger(chartId, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(chartId, name, OBJPROP_BACK, true);
+   const string tn = name + "_LBL";
+   ObjectCreate(chartId, tn, OBJ_TEXT, 0, t2, price);
+   ObjectSetString(chartId, tn, OBJPROP_TEXT, "  " + text);
+   ObjectSetInteger(chartId, tn, OBJPROP_COLOR, clr);
+   ObjectSetInteger(chartId, tn, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(chartId, tn, OBJPROP_ANCHOR, ANCHOR_LEFT);
+   ObjectSetInteger(chartId, tn, OBJPROP_SELECTABLE, false);
+  }
+
 void CEliotWaveABC::DeletePrefix(const long chartId, const string prefix)
   {
    int total = ObjectsTotal(chartId, -1, -1);
@@ -867,19 +941,31 @@ void CEliotWaveABC::Draw(const long chartId, const string prefix, const bool sho
    ObjectSetInteger(chartId, nC, OBJPROP_RAY_RIGHT, false);
    ObjectSetInteger(chartId, nC, OBJPROP_SELECTABLE, false);
 
-   string nZ = prefix + "ZONE_C";
-   ObjectCreate(chartId, nZ, OBJ_RECTANGLE, 0, tB, m_pat.zone_high, tNow + PeriodSeconds(m_tf) * 8, m_pat.zone_low);
-   ObjectSetInteger(chartId, nZ, OBJPROP_COLOR, (m_pat.dir == EWA_BUY ? m_cfg.colorZoneBuy : m_cfg.colorZoneSell));
+   const datetime tRight = tNow + PeriodSeconds(m_tf) * 12;
+   const color    zCol   = (m_pat.dir == EWA_BUY ? m_cfg.colorZoneBuy : m_cfg.colorZoneSell);
+   const bool     isLong = (m_pat.dir == EWA_BUY);
+
+   string nZ = prefix + "ZONE_ENTRY";
+   ObjectCreate(chartId, nZ, OBJ_RECTANGLE, 0, tB, m_pat.zone_high, tRight, m_pat.zone_low);
+   ObjectSetInteger(chartId, nZ, OBJPROP_COLOR, zCol);
    ObjectSetInteger(chartId, nZ, OBJPROP_STYLE, STYLE_DOT);
-   ObjectSetInteger(chartId, nZ, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(chartId, nZ, OBJPROP_WIDTH, 2);
    ObjectSetInteger(chartId, nZ, OBJPROP_FILL, true);
    ObjectSetInteger(chartId, nZ, OBJPROP_BACK, true);
    ObjectSetInteger(chartId, nZ, OBJPROP_SELECTABLE, false);
 
+   string nZlbl = prefix + "ZONE_ENTRY_LBL";
+   ObjectCreate(chartId, nZlbl, OBJ_TEXT, 0, tB, (m_pat.zone_high + m_pat.zone_low) * 0.5);
+   ObjectSetString(chartId, nZlbl, OBJPROP_TEXT, isLong ? "  LONG ENTRY  (zona C)" : "  SHORT ENTRY  (zona C)");
+   ObjectSetInteger(chartId, nZlbl, OBJPROP_COLOR, zCol);
+   ObjectSetInteger(chartId, nZlbl, OBJPROP_FONTSIZE, 10);
+   ObjectSetInteger(chartId, nZlbl, OBJPROP_ANCHOR, ANCHOR_LEFT);
+   ObjectSetInteger(chartId, nZlbl, OBJPROP_SELECTABLE, false);
+
    if(showFibo)
      {
       string nF = prefix + "FIBO_C";
-      const double p2 = (m_pat.dir == EWA_BUY ? m_pat.b_end - m_pat.waveA : m_pat.b_end + m_pat.waveA);
+      const double p2 = (isLong ? m_pat.b_end - m_pat.waveA : m_pat.b_end + m_pat.waveA);
       ObjectCreate(chartId, nF, OBJ_FIBO, 0, tB, m_pat.b_end, tNow, p2);
       ObjectSetInteger(chartId, nF, OBJPROP_COLOR, clrGoldenrod);
       ObjectSetInteger(chartId, nF, OBJPROP_RAY_RIGHT, true);
@@ -887,11 +973,11 @@ void CEliotWaveABC::Draw(const long chartId, const string prefix, const bool sho
       ObjectSetInteger(chartId, nF, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(chartId, nF, OBJPROP_BACK, true);
       const double lv[6]  = {0.0, 0.618, 1.0, 1.272, 1.618, 2.618};
-      const string lb[6]  = {"C 0% (awal C)", "C 61.8%", "C 100%", "C 127.2%", "C 161.8%  zona", "C 261.8% invalid"};
+      const string fl[6]  = {"C 0% (awal C)", "C 61.8%", "C 100%", "C 127.2%", "C 161.8%  zona", "C 261.8% invalid"};
       for(int k = 0; k < 6; k++)
         {
          ObjectSetDouble(chartId, nF, OBJPROP_LEVELVALUE, k, lv[k]);
-         ObjectSetString(chartId, nF, OBJPROP_LEVELTEXT, k, lb[k]);
+         ObjectSetString(chartId, nF, OBJPROP_LEVELTEXT, k, fl[k]);
          ObjectSetInteger(chartId, nF, OBJPROP_LEVELCOLOR, k, clrGoldenrod);
          ObjectSetInteger(chartId, nF, OBJPROP_LEVELSTYLE, k, STYLE_DOT);
         }
@@ -902,7 +988,7 @@ void CEliotWaveABC::Draw(const long chartId, const string prefix, const bool sho
    ObjectSetString(chartId, la, OBJPROP_TEXT, "  A");
    ObjectSetInteger(chartId, la, OBJPROP_COLOR, m_cfg.colorA);
    ObjectSetInteger(chartId, la, OBJPROP_FONTSIZE, 12);
-   ObjectSetInteger(chartId, la, OBJPROP_ANCHOR, (m_pat.dir == EWA_BUY ? ANCHOR_LOWER : ANCHOR_UPPER));
+   ObjectSetInteger(chartId, la, OBJPROP_ANCHOR, (isLong ? ANCHOR_LOWER : ANCHOR_UPPER));
    ObjectSetInteger(chartId, la, OBJPROP_SELECTABLE, false);
 
    string lb = prefix + "LBL_B";
@@ -910,16 +996,49 @@ void CEliotWaveABC::Draw(const long chartId, const string prefix, const bool sho
    ObjectSetString(chartId, lb, OBJPROP_TEXT, "  B");
    ObjectSetInteger(chartId, lb, OBJPROP_COLOR, m_cfg.colorB);
    ObjectSetInteger(chartId, lb, OBJPROP_FONTSIZE, 12);
-   ObjectSetInteger(chartId, lb, OBJPROP_ANCHOR, (m_pat.dir == EWA_BUY ? ANCHOR_LOWER : ANCHOR_UPPER));
+   ObjectSetInteger(chartId, lb, OBJPROP_ANCHOR, (isLong ? ANCHOR_LOWER : ANCHOR_UPPER));
    ObjectSetInteger(chartId, lb, OBJPROP_SELECTABLE, false);
 
    string lc = prefix + "LBL_C";
    ObjectCreate(chartId, lc, OBJ_TEXT, 0, tNow, cNow);
-   ObjectSetString(chartId, lc, OBJPROP_TEXT, "  C  zona pantulan");
+   ObjectSetString(chartId, lc, OBJPROP_TEXT, "  C");
    ObjectSetInteger(chartId, lc, OBJPROP_COLOR, m_cfg.colorC);
    ObjectSetInteger(chartId, lc, OBJPROP_FONTSIZE, 12);
-   ObjectSetInteger(chartId, lc, OBJPROP_ANCHOR, (m_pat.dir == EWA_BUY ? ANCHOR_UPPER : ANCHOR_LOWER));
+   ObjectSetInteger(chartId, lc, OBJPROP_ANCHOR, (isLong ? ANCHOR_UPPER : ANCHOR_LOWER));
    ObjectSetInteger(chartId, lc, OBJPROP_SELECTABLE, false);
+
+   double planE = 0, planSL = 0, tp1 = 0, tp2 = 0, tp3 = 0;
+   FillTradePlan(planE, planSL, tp1, tp2, tp3);
+   const double risk = MathAbs(planE - planSL);
+   const bool   slOk = risk > 0.0 && (isLong ? planSL < planE : planSL > planE);
+   double rr1 = 0, rr2 = 0, rr3 = 0;
+   if(slOk)
+     {
+      rr1 = MathAbs(tp1 - planE) / risk;
+      rr2 = MathAbs(tp2 - planE) / risk;
+      rr3 = MathAbs(tp3 - planE) / risk;
+
+      string nRisk = prefix + "ZONE_RISK";
+      ObjectCreate(chartId, nRisk, OBJ_RECTANGLE, 0, tB, MathMax(planE, planSL), tRight, MathMin(planE, planSL));
+      ObjectSetInteger(chartId, nRisk, OBJPROP_COLOR, clrTomato);
+      ObjectSetInteger(chartId, nRisk, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(chartId, nRisk, OBJPROP_FILL, true);
+      ObjectSetInteger(chartId, nRisk, OBJPROP_BACK, true);
+      ObjectSetInteger(chartId, nRisk, OBJPROP_SELECTABLE, false);
+
+      DrawRay(chartId, prefix + "LV_ENTRY", tB, tRight, planE, zCol,
+              StringFormat("%s  C=%.0f%%A", (isLong ? "LONG ENTRY" : "SHORT ENTRY"), m_pat.c_fib * 100.0), 2);
+      DrawRay(chartId, prefix + "LV_SL", tB, tRight, planSL, clrTomato, "SL", 2);
+      if(isLong ? tp1 > planE : tp1 < planE)
+         DrawRay(chartId, prefix + "LV_TP1", tB, tRight, tp1, clrLimeGreen,
+                 StringFormat("TP1  0.618C  RR %.2f", rr1), 2);
+      if(isLong ? tp2 > planE : tp2 < planE)
+         DrawRay(chartId, prefix + "LV_TP2", tB, tRight, tp2, clrDeepSkyBlue,
+                 StringFormat("TP2  Wave B  RR %.2f", rr2), 2);
+      if(isLong ? tp3 > planE : tp3 < planE)
+         DrawRay(chartId, prefix + "LV_TP3", tB, tRight, tp3, clrGold,
+                 StringFormat("TP3  Wave A  RR %.2f", rr3), 2);
+     }
 
    if(m_sig.valid)
      {
@@ -933,22 +1052,28 @@ void CEliotWaveABC::Draw(const long chartId, const string prefix, const bool sho
      }
 
    const string dash = prefix + "DASH";
-   const string txt  = StringFormat(
-                          "ELIOTWAVE ABC  |  %s\nWave A: %.5f   B retrace: %.1f%%   C: %.1f%% dari A\nZona C: %.5f  -  %.5f\n%s%s",
-                          (m_pat.dir == EWA_BUY ? "BUY (C turun, pantul naik)" : "SELL (C naik, pantul turun)"),
-                          m_pat.waveA,
-                          m_pat.retraceB * 100.0,
-                          m_pat.c_fib * 100.0,
-                          m_pat.zone_low,
-                          m_pat.zone_high,
-                          m_pat.status,
-                          (m_sig.valid ? "\n>>> ENTRI " + m_sig.reason : "")
-                       );
+   string txt = StringFormat(
+                   "ELIOTWAVE ABC  |  %s\nWave A: %s   B retrace: %.1f%%   C: %.1f%% A\n%s",
+                   (isLong ? "LONG (C turun, pantul naik)" : "SHORT (C naik, pantul turun)"),
+                   DoubleToString(m_pat.waveA, m_digits),
+                   m_pat.retraceB * 100.0,
+                   m_pat.c_fib * 100.0,
+                   m_pat.status);
+   if(slOk)
+      txt += StringFormat(
+                "\nENTRY %s   SL %s\nTP1 0.618C %s  RR %.2f\nTP2 Wave B %s  RR %.2f\nTP3 Wave A %s  RR %.2f",
+                DoubleToString(planE, m_digits),
+                DoubleToString(planSL, m_digits),
+                DoubleToString(tp1, m_digits), rr1,
+                DoubleToString(tp2, m_digits), rr2,
+                DoubleToString(tp3, m_digits), rr3);
+   if(m_sig.valid)
+      txt += "\n>>> " + m_sig.reason;
    ObjectCreate(chartId, dash, OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(chartId, dash, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(chartId, dash, OBJPROP_XDISTANCE, 12);
    ObjectSetInteger(chartId, dash, OBJPROP_YDISTANCE, 18);
-   ObjectSetInteger(chartId, dash, OBJPROP_COLOR, (m_pat.dir == EWA_BUY ? clrLime : clrOrangeRed));
+   ObjectSetInteger(chartId, dash, OBJPROP_COLOR, (isLong ? clrLime : clrOrangeRed));
    ObjectSetInteger(chartId, dash, OBJPROP_FONTSIZE, 9);
    ObjectSetInteger(chartId, dash, OBJPROP_SELECTABLE, false);
    ObjectSetString(chartId, dash, OBJPROP_FONT, "Consolas");

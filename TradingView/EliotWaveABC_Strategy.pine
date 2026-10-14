@@ -1,5 +1,5 @@
 //@version=5
-strategy("ELIOTWAVE ABC Strategy", overlay = true, initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.cash, default_qty_value = 1000, commission_type = strategy.commission.percent, commission_value = 0.03, pyramiding = 0, process_orders_on_close = true, calc_on_every_tick = false, max_lines_count = 40, max_labels_count = 25, max_boxes_count = 8, max_bars_back = 2000)
+strategy("ELIOTWAVE ABC Strategy", overlay = true, initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.cash, default_qty_value = 1000, commission_type = strategy.commission.percent, commission_value = 0.03, pyramiding = 0, process_orders_on_close = true, calc_on_every_tick = false, max_lines_count = 80, max_labels_count = 60, max_boxes_count = 16, max_bars_back = 2000)
 
 // Strategy Elliott Wave ABC — entri hanya saat harga memantul di zona Fibonacci Wave C.
 
@@ -297,6 +297,23 @@ var float posEntry = na
 bool buyOnce = bounceNow and dir == 1 and allowBuy and strategy.position_size == 0 and (not onePerPat or na(lastPattern) or lastPattern != bBar)
 bool sellOnce = bounceNow and dir == -1 and allowSell and strategy.position_size == 0 and (not onePerPat or na(lastPattern) or lastPattern != bBar)
 
+inEntryZone = valid and (dir == 1 ? close <= zoneHigh and close >= zoneLow : close >= zoneLow and close <= zoneHigh)
+cEndPlan = valid ? (dir == 1 ? (bEnd - cExt > 0 ? cExt : c100) : (cExt - bEnd > 0 ? cExt : c100)) : float(na)
+cLenPlan = valid ? math.max(math.abs(bEnd - cEndPlan), waveA * 0.01) : float(na)
+planEntry = valid ? (buyOnce or sellOnce or inEntryZone ? close : c100) : float(na)
+planSL = valid ? (dir == 1 ? math.min(cExt, zoneLow) - atrNow * slAtr : math.max(cExt, zoneHigh) + atrNow * slAtr) : float(na)
+tp1w = valid ? (dir == 1 ? cEndPlan + 0.618 * cLenPlan : cEndPlan - 0.618 * cLenPlan) : float(na)
+tp2w = valid ? bEnd : float(na)
+tp3w = valid ? aStart : float(na)
+riskW = valid ? math.abs(planEntry - planSL) : 0.0
+rr1w = riskW > 0 ? math.abs(tp1w - planEntry) / riskW : 0.0
+rr2w = riskW > 0 ? math.abs(tp2w - planEntry) / riskW : 0.0
+rr3w = riskW > 0 ? math.abs(tp3w - planEntry) / riskW : 0.0
+slOkW = valid and (dir == 1 ? planSL < planEntry : planSL > planEntry)
+tp1OkW = slOkW and (dir == 1 ? tp1w > planEntry : tp1w < planEntry)
+tp2OkW = slOkW and (dir == 1 ? tp2w > planEntry : tp2w < planEntry)
+tp3OkW = slOkW and (dir == 1 ? tp3w > planEntry : tp3w < planEntry)
+
 if buyOnce
     float sl = math.min(low, cExt) - atrNow * slAtr
     float tp = f_tp(1, close, sl, aStart, bEnd)
@@ -360,9 +377,19 @@ var line ln100 = na
 var line ln127 = na
 var line ln162 = na
 var box bxZ = na
+var line lnSL = na
+var line lnE = na
+var line lnTP1 = na
+var line lnTP2 = na
+var line lnTP3 = na
 var label lbA = na
 var label lbB = na
 var label lbC = na
+var label lbEntry = na
+var label lbSL = na
+var label lbTP1 = na
+var label lbTP2 = na
+var label lbTP3 = na
 
 if showDraw
     if not valid
@@ -399,6 +426,36 @@ if showDraw
         if not na(lbC)
             label.delete(lbC)
             lbC := na
+        if not na(lnSL)
+            line.delete(lnSL)
+            lnSL := na
+        if not na(lnE)
+            line.delete(lnE)
+            lnE := na
+        if not na(lnTP1)
+            line.delete(lnTP1)
+            lnTP1 := na
+        if not na(lnTP2)
+            line.delete(lnTP2)
+            lnTP2 := na
+        if not na(lnTP3)
+            line.delete(lnTP3)
+            lnTP3 := na
+        if not na(lbEntry)
+            label.delete(lbEntry)
+            lbEntry := na
+        if not na(lbSL)
+            label.delete(lbSL)
+            lbSL := na
+        if not na(lbTP1)
+            label.delete(lbTP1)
+            lbTP1 := na
+        if not na(lbTP2)
+            label.delete(lbTP2)
+            lbTP2 := na
+        if not na(lbTP3)
+            label.delete(lbTP3)
+            lbTP3 := na
     else
         if na(lnA)
             lnA := line.new(aBar, aStart, aeBar, aEnd, color = colA, width = 3)
@@ -415,8 +472,8 @@ if showDraw
         else
             line.set_xy1(lnC, bBar, bEnd)
             line.set_xy2(lnC, bar_index, cExt)
-        color zFill = dir == 1 ? color.new(colZoneBuy, 85) : color.new(colZoneSell, 85)
-        color zBord = dir == 1 ? color.new(colZoneBuy, 40) : color.new(colZoneSell, 40)
+        zFill = dir == 1 ? color.new(colZoneBuy, 85) : color.new(colZoneSell, 85)
+        zBord = dir == 1 ? color.new(colZoneBuy, 40) : color.new(colZoneSell, 40)
         if na(bxZ)
             bxZ := box.new(bBar, zoneHigh, bar_index + 8, zoneLow, border_color = zBord, bgcolor = zFill, border_style = line.style_dotted)
         else
@@ -425,7 +482,7 @@ if showDraw
             box.set_bgcolor(bxZ, zFill)
             box.set_border_color(bxZ, zBord)
         if showFibo
-            color fc = color.new(colC, 35)
+            fc = color.new(colC, 35)
             if na(ln618)
                 ln618 := line.new(bBar, c618, bar_index + 8, c618, color = fc, style = line.style_dotted)
                 ln100 := line.new(bBar, c100, bar_index + 8, c100, color = fc, style = line.style_dotted)
@@ -451,6 +508,69 @@ if showDraw
             label.set_textcolor(lbB, colB)
             label.set_xy(lbC, bar_index, cExt)
             label.set_textcolor(lbC, colC)
+        if slOkW
+            xR = bar_index + 12
+            xM = bar_index + 4
+            bgT = color.new(#000000, 100)
+            eCol = dir == 1 ? colZoneBuy : colZoneSell
+            eTxt = (dir == 1 ? "LONG ENTRY" : "SHORT ENTRY") + "  C=" + str.tostring(cFib * 100, "#") + "%A"
+            if na(lnE)
+                lnE := line.new(bBar, planEntry, xR, planEntry, color = eCol, width = 2)
+            else
+                line.set_xy1(lnE, bBar, planEntry)
+                line.set_xy2(lnE, xR, planEntry)
+                line.set_color(lnE, eCol)
+            if na(lbEntry)
+                lbEntry := label.new(xM, planEntry, eTxt, color = bgT, textcolor = eCol, style = label.style_label_left, size = size.small)
+            else
+                label.set_xy(lbEntry, xM, planEntry)
+                label.set_text(lbEntry, eTxt)
+                label.set_textcolor(lbEntry, eCol)
+            if na(lnSL)
+                lnSL := line.new(bBar, planSL, xR, planSL, color = #FF4D4D, width = 2)
+            else
+                line.set_xy1(lnSL, bBar, planSL)
+                line.set_xy2(lnSL, xR, planSL)
+            if na(lbSL)
+                lbSL := label.new(xM, planSL, "SL", color = bgT, textcolor = #FF4D4D, style = label.style_label_left, size = size.small)
+            else
+                label.set_xy(lbSL, xM, planSL)
+            if tp1OkW
+                t1s = "TP1  0.618C  RR " + str.tostring(rr1w, "#.##")
+                if na(lnTP1)
+                    lnTP1 := line.new(bBar, tp1w, xR, tp1w, color = #00E676, width = 2)
+                else
+                    line.set_xy1(lnTP1, bBar, tp1w)
+                    line.set_xy2(lnTP1, xR, tp1w)
+                if na(lbTP1)
+                    lbTP1 := label.new(xM, tp1w, t1s, color = bgT, textcolor = #00E676, style = label.style_label_left, size = size.small)
+                else
+                    label.set_xy(lbTP1, xM, tp1w)
+                    label.set_text(lbTP1, t1s)
+            if tp2OkW
+                t2s = "TP2  Wave B  RR " + str.tostring(rr2w, "#.##")
+                if na(lnTP2)
+                    lnTP2 := line.new(bBar, tp2w, xR, tp2w, color = #00BCD4, width = 2)
+                else
+                    line.set_xy1(lnTP2, bBar, tp2w)
+                    line.set_xy2(lnTP2, xR, tp2w)
+                if na(lbTP2)
+                    lbTP2 := label.new(xM, tp2w, t2s, color = bgT, textcolor = #00BCD4, style = label.style_label_left, size = size.small)
+                else
+                    label.set_xy(lbTP2, xM, tp2w)
+                    label.set_text(lbTP2, t2s)
+            if tp3OkW
+                t3s = "TP3  Wave A  RR " + str.tostring(rr3w, "#.##")
+                if na(lnTP3)
+                    lnTP3 := line.new(bBar, tp3w, xR, tp3w, color = #FFD54F, width = 2)
+                else
+                    line.set_xy1(lnTP3, bBar, tp3w)
+                    line.set_xy2(lnTP3, xR, tp3w)
+                if na(lbTP3)
+                    lbTP3 := label.new(xM, tp3w, t3s, color = bgT, textcolor = #FFD54F, style = label.style_label_left, size = size.small)
+                else
+                    label.set_xy(lbTP3, xM, tp3w)
+                    label.set_text(lbTP3, t3s)
 
 if buyOnce
     alert("ELIOTWAVE ABC BUY " + syminfo.ticker + " " + timeframe.period + " | pantulan zona C", alert.freq_once_per_bar_close)

@@ -140,6 +140,20 @@ Swing terkonfirmasi  →  validasi ABC  →  C mencapai zona Fib
 
 Tidak ada entri di Wave A atau B. **Hanya area C, dan hanya setelah pantulan.**
 
+### Area entri, SL, TP, RR (indikator MT5 & TradingView)
+
+Saat pola ABC valid, indikator menggambar rencana trade:
+
+| Level | Arti Elliott Wave | RR |
+| --- | --- | --- |
+| **LONG / SHORT ENTRY** | Zona Fibonacci Wave C (0.886–1.618 × A) | — |
+| **SL** | Di luar ekstrem C + buffer ATR | 1R |
+| **TP1 0.618C** | Retrace 61.8% Wave C (target konservatif) | RR vs SL |
+| **TP2 Wave B** | Awal Wave C / akhir B (retrace 100% C) | RR vs SL |
+| **TP3 Wave A** | Origin Wave A (target utama ABC) | RR vs SL |
+
+Kotak hijau = area **LONG ENTRY**. Kotak merah = area **SHORT ENTRY**. Kotak tipis di luar entri = zona risiko sampai SL.
+
 ---
 
 ## Backtest
