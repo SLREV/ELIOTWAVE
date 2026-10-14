@@ -1,0 +1,567 @@
+//@version=5
+indicator("ELIOTWAVE ABC", overlay = true, max_lines_count = 80, max_labels_count = 60, max_boxes_count = 16, max_bars_back = 2000)
+
+// Elliott Wave ABC — zona LONG/SHORT di Wave C, SL/TP, RR struktural.
+// Hindari named arg `color=` di blok if/else (error: Undeclared identifier 'color').
+
+grpWave = "Deteksi Wave"
+grpAbc  = "Aturan ABC"
+grpC    = "Pantulan Wave C"
+grpLv   = "Entri / SL / TP"
+grpView = "Tampilan"
+
+depth        = input.int(12, "Kedalaman swing", minval = 2, maxval = 50, group = grpWave)
+atrLen       = input.int(14, "Periode ATR", minval = 1, group = grpWave)
+minSwingAtr  = input.float(0.40, "Min swing (x ATR)", minval = 0.0, step = 0.05, group = grpWave)
+minWaveAtr   = input.float(0.80, "Min Wave A (x ATR)", minval = 0.0, step = 0.05, group = grpWave)
+strictZigzag = input.bool(true, "B tidak melewati awal A", group = grpWave)
+
+bMin         = input.float(0.382, "Retrace B minimum", minval = 0.1, maxval = 1.0, step = 0.001, group = grpAbc)
+bMax         = input.float(0.886, "Retrace B maksimum", minval = 0.1, maxval = 1.5, step = 0.001, group = grpAbc)
+cFibMin      = input.float(0.886, "Zona C Fibonacci min", minval = 0.382, maxval = 2.0, step = 0.001, group = grpAbc)
+cFibMax      = input.float(1.618, "Zona C Fibonacci max", minval = 0.618, maxval = 3.0, step = 0.001, group = grpAbc)
+cFibInvalid  = input.float(2.618, "Invalid jika C > ini", minval = 1.0, maxval = 4.0, step = 0.001, group = grpAbc)
+
+bounceMode   = input.string("ANY", "Mode pantulan", options = ["REJECTION", "PINBAR", "ENGULFING", "ANY"], group = grpC)
+wickRatio    = input.float(0.50, "Rasio sumbu rejection", minval = 0.2, maxval = 0.9, step = 0.05, group = grpC)
+useRsi       = input.bool(true, "Filter RSI", group = grpC)
+rsiLen       = input.int(14, "Periode RSI", minval = 2, group = grpC)
+rsiBuyMax    = input.float(40.0, "RSI max untuk BUY", minval = 10, maxval = 60, group = grpC)
+rsiSellMin   = input.float(60.0, "RSI min untuk SELL", minval = 40, maxval = 90, group = grpC)
+closedBar    = input.bool(true, "Sinyal di bar tertutup", group = grpC)
+
+slAtr        = input.float(0.35, "Buffer SL (x ATR)", minval = 0.05, step = 0.05, group = grpLv)
+showLevels   = input.bool(true, "Area entri + SL/TP + RR", group = grpLv)
+
+showFibo     = input.bool(true, "Fibonacci proyeksi C", group = grpView)
+showDash     = input.bool(true, "Panel status", group = grpView)
+colA         = input.color(#1E90FF, "Warna Wave A", group = grpView)
+colB         = input.color(#FF8C00, "Warna Wave B", group = grpView)
+colC         = input.color(#FFD700, "Warna Wave C", group = grpView)
+colZoneBuy   = input.color(#228B22, "Zona LONG", group = grpView)
+colZoneSell  = input.color(#B22222, "Zona SHORT", group = grpView)
+colSL        = input.color(#FF4D4D, "Warna SL", group = grpView)
+colTP1       = input.color(#00E676, "Warna TP1 0.618C", group = grpView)
+colTP2       = input.color(#00BCD4, "Warna TP2 Wave B", group = grpView)
+colTP3       = input.color(#FFD54F, "Warna TP3 Wave A", group = grpView)
+
+hexLime      = #00FF7F
+hexOrange    = #FFA500
+hexSilver    = #C0C0C0
+hexRed       = #FF4500
+transBg      = color.new(#000000, 100)
+zFillBuy     = color.new(colZoneBuy, 82)
+zFillSell    = color.new(colZoneSell, 82)
+zBordBuy     = color.new(colZoneBuy, 35)
+zBordSell    = color.new(colZoneSell, 35)
+fcC          = color.new(colC, 40)
+riskFill     = color.new(colSL, 88)
+riskBord     = color.new(colSL, 40)
+dashBg       = color.new(#0E1117, 20)
+dashFrame    = color.new(#78909C, 50)
+
+type Pivot
+    int   dir
+    float price
+    int   barIndex
+
+f_lowest(int fromBar) =>
+    float v = low
+    int dist = bar_index - fromBar
+    if dist < 1
+        v
+    else
+        int m = math.min(math.max(dist, 1), 400)
+        for i = 0 to m - 1
+            v := math.min(v, low[i])
+        v
+
+f_highest(int fromBar) =>
+    float v = high
+    int dist = bar_index - fromBar
+    if dist < 1
+        v
+    else
+        int m = math.min(math.max(dist, 1), 400)
+        for i = 0 to m - 1
+            v := math.max(v, high[i])
+        v
+
+f_rejection(int dir, float zHigh, float zLow) =>
+    float rng = high - low
+    float lower = math.min(open, close) - low
+    float upper = high - math.max(open, close)
+    bool buyOk = rng > 0 and lower / rng >= wickRatio and not (close < open and (close - low) / rng < 0.50) and low <= zHigh
+    bool sellOk = rng > 0 and upper / rng >= wickRatio and not (close > open and (high - close) / rng < 0.50) and high >= zLow
+    dir == 1 ? buyOk : sellOk
+
+f_pin(int dir) =>
+    float rng = high - low
+    float body = math.abs(close - open)
+    float lower = math.min(open, close) - low
+    float upper = high - math.max(open, close)
+    rng > 0 and body / rng <= 0.35 and (dir == 1 ? lower >= rng * 0.60 and close > low + rng * 0.55 : upper >= rng * 0.60 and close < high - rng * 0.55)
+
+f_engulf(int dir) =>
+    float body = math.abs(close - open)
+    float prevBody = math.abs(close[1] - open[1])
+    body >= prevBody * 0.9 and (dir == 1 ? close[1] < open[1] and close > open and open <= close[1] and close >= open[1] : close[1] > open[1] and close < open and open >= close[1] and close <= open[1])
+
+f_bounce(int dir, float zHigh, float zLow, float atrVal, float rsiVal) =>
+    bool inZone = dir == 1 ? low <= zHigh and low >= zLow - atrVal * 0.15 : high >= zLow and high <= zHigh + atrVal * 0.15
+    bool anyPat = f_rejection(dir, zHigh, zLow) or f_pin(dir) or f_engulf(dir) or (dir == 1 ? close > open and low <= zHigh : close < open and high >= zLow)
+    bool pat = bounceMode == "REJECTION" ? f_rejection(dir, zHigh, zLow) : bounceMode == "PINBAR" ? f_pin(dir) : bounceMode == "ENGULFING" ? f_engulf(dir) : anyPat
+    bool rsiOk = not useRsi or (dir == 1 ? rsiVal <= rsiBuyMax : rsiVal >= rsiSellMin)
+    inZone and pat and rsiOk
+
+f_rr(float entry, float sl, float tp) =>
+    float risk = math.abs(entry - sl)
+    risk > 0 ? math.abs(tp - entry) / risk : 0.0
+
+mkLine(x1, y1, x2, y2, col, w, dotted) =>
+    line.new(x1, y1, x2, y2, xloc.bar_index, extend.none, col, dotted ? line.style_dotted : line.style_solid, w)
+
+mkLabel(x, y, txt, fg, sty) =>
+    label.new(x, y, txt, xloc.bar_index, yloc.price, transBg, sty, fg, size.small)
+
+mkBox(x1, y1, x2, y2, bord, fill) =>
+    box.new(x1, y1, x2, y2, bord, 1, line.style_dotted, extend.none, xloc.bar_index, fill)
+
+setH(ln, x1, x2, y, col, w) =>
+    line.set_xy1(ln, x1, y)
+    line.set_xy2(ln, x2, y)
+    line.set_color(ln, col)
+    line.set_width(ln, w)
+
+setLb(lb, x, y, txt, fg) =>
+    label.set_xy(lb, x, y)
+    label.set_text(lb, txt)
+    label.set_textcolor(lb, fg)
+
+var array<Pivot> pivots = array.new<Pivot>()
+
+atrNow = ta.atr(atrLen)
+rsiNow = ta.rsi(close, rsiLen)
+ph     = ta.pivothigh(high, depth, depth)
+pl     = ta.pivotlow(low, depth, depth)
+
+if na(ph) or na(pl)
+    if not na(ph)
+        idxH = bar_index - depth
+        nH = array.size(pivots)
+        if nH == 0
+            array.push(pivots, Pivot.new(1, ph, idxH))
+        else
+            lastH = array.get(pivots, nH - 1)
+            if lastH.dir == 1
+                if ph >= lastH.price
+                    lastH.price := ph
+                    lastH.barIndex := idxH
+                    array.set(pivots, nH - 1, lastH)
+            else
+                tooSmallH = atrNow > 0 and math.abs(ph - lastH.price) < atrNow * minSwingAtr
+                if not tooSmallH
+                    array.push(pivots, Pivot.new(1, ph, idxH))
+                    if array.size(pivots) > 40
+                        array.shift(pivots)
+    if not na(pl)
+        idxL = bar_index - depth
+        nL = array.size(pivots)
+        if nL == 0
+            array.push(pivots, Pivot.new(-1, pl, idxL))
+        else
+            lastL = array.get(pivots, nL - 1)
+            if lastL.dir == -1
+                if pl <= lastL.price
+                    lastL.price := pl
+                    lastL.barIndex := idxL
+                    array.set(pivots, nL - 1, lastL)
+            else
+                tooSmallL = atrNow > 0 and math.abs(pl - lastL.price) < atrNow * minSwingAtr
+                if not tooSmallL
+                    array.push(pivots, Pivot.new(-1, pl, idxL))
+                    if array.size(pivots) > 40
+                        array.shift(pivots)
+
+valid    = false
+dir      = 0
+aBar     = 0
+aeBar    = 0
+bBar     = 0
+aStart   = float(na)
+aEnd     = float(na)
+bEnd     = float(na)
+waveA    = float(na)
+retrB    = float(na)
+zoneHigh = float(na)
+zoneLow  = float(na)
+c100     = float(na)
+c618     = float(na)
+c127     = float(na)
+c162     = float(na)
+cExt     = float(na)
+cFib     = float(na)
+status   = "Tidak ada pola ABC"
+
+if array.size(pivots) >= 3
+    pA  = array.get(pivots, array.size(pivots) - 3)
+    pAe = array.get(pivots, array.size(pivots) - 2)
+    pB  = array.get(pivots, array.size(pivots) - 1)
+
+    if pA.dir == 1 and pAe.dir == -1 and pB.dir == 1
+        wA = pA.price - pAe.price
+        wB = pB.price - pAe.price
+        retr = wA > 0 ? wB / wA : 0.0
+        sizeOk = not (atrNow > 0 and wA < atrNow * minWaveAtr)
+        zigOk = not strictZigzag or pB.price < pA.price
+        if wA > 0 and wB > 0 and retr >= bMin and retr <= bMax and sizeOk and zigOk
+            valid := true
+            dir := 1
+            aBar := pA.barIndex
+            aeBar := pAe.barIndex
+            bBar := pB.barIndex
+            aStart := pA.price
+            aEnd := pAe.price
+            bEnd := pB.price
+            waveA := wA
+            retrB := retr
+            c618 := pB.price - wA * 0.618
+            c100 := pB.price - wA * 1.000
+            c127 := pB.price - wA * 1.272
+            c162 := pB.price - wA * 1.618
+            z1 = pB.price - wA * cFibMin
+            z2 = pB.price - wA * cFibMax
+            zoneHigh := math.max(z1, z2)
+            zoneLow := math.min(z1, z2)
+            if high > pB.price
+                valid := false
+                status := "ABC BUY invalid: harga pecah di atas B"
+            else
+                cExt := f_lowest(pB.barIndex)
+                cFib := (pB.price - cExt) / wA
+                if cExt < pB.price - wA * cFibInvalid
+                    valid := false
+                    status := "ABC BUY invalid: Wave C tembus 2.618"
+                else if cExt > zoneHigh
+                    status := "ABC BUY: C berjalan (" + str.tostring(cFib * 100, "#") + "% A), menunggu zona C"
+                else
+                    status := "ABC BUY: harga di zona C (" + str.tostring(cFib * 100, "#") + "% A) — pantauan pantulan"
+
+    if pA.dir == -1 and pAe.dir == 1 and pB.dir == -1
+        wAs = pAe.price - pA.price
+        wBs = pAe.price - pB.price
+        retrS = wAs > 0 ? wBs / wAs : 0.0
+        sizeOkS = not (atrNow > 0 and wAs < atrNow * minWaveAtr)
+        zigOkS = not strictZigzag or pB.price > pA.price
+        if wAs > 0 and wBs > 0 and retrS >= bMin and retrS <= bMax and sizeOkS and zigOkS
+            valid := true
+            dir := -1
+            aBar := pA.barIndex
+            aeBar := pAe.barIndex
+            bBar := pB.barIndex
+            aStart := pA.price
+            aEnd := pAe.price
+            bEnd := pB.price
+            waveA := wAs
+            retrB := retrS
+            c618 := pB.price + wAs * 0.618
+            c100 := pB.price + wAs * 1.000
+            c127 := pB.price + wAs * 1.272
+            c162 := pB.price + wAs * 1.618
+            z1s = pB.price + wAs * cFibMin
+            z2s = pB.price + wAs * cFibMax
+            zoneHigh := math.max(z1s, z2s)
+            zoneLow := math.min(z1s, z2s)
+            if low < pB.price
+                valid := false
+                status := "ABC SELL invalid: harga pecah di bawah B"
+            else
+                cExt := f_highest(pB.barIndex)
+                cFib := (cExt - pB.price) / wAs
+                if cExt > pB.price + wAs * cFibInvalid
+                    valid := false
+                    status := "ABC SELL invalid: Wave C tembus 2.618"
+                else if cExt < zoneLow
+                    status := "ABC SELL: C berjalan (" + str.tostring(cFib * 100, "#") + "% A), menunggu zona C"
+                else
+                    status := "ABC SELL: harga di zona C (" + str.tostring(cFib * 100, "#") + "% A) — pantauan pantulan"
+
+barOk = not closedBar or barstate.isconfirmed
+reachedC = valid and not na(cFib) and cFib >= cFibMin
+notThru = valid and (dir == 1 ? close >= zoneLow : close <= zoneHigh)
+bounceNow = reachedC and notThru and barOk and f_bounce(dir, zoneHigh, zoneLow, atrNow, rsiNow)
+
+var int firedOn = na
+buyOnce = bounceNow and dir == 1 and (na(firedOn) or firedOn != bBar)
+sellOnce = bounceNow and dir == -1 and (na(firedOn) or firedOn != bBar)
+if buyOnce or sellOnce
+    firedOn := bBar
+    status := "SINYAL PANTULAN WAVE C"
+
+inEntryZone = valid and (dir == 1 ? close <= zoneHigh and close >= zoneLow : close >= zoneLow and close <= zoneHigh)
+cEnd = valid ? (dir == 1 ? (bEnd - cExt > 0 ? cExt : c100) : (cExt - bEnd > 0 ? cExt : c100)) : float(na)
+cLen = valid ? math.max(math.abs(bEnd - cEnd), waveA * 0.01) : float(na)
+planEntry = valid ? (buyOnce or sellOnce or inEntryZone ? close : c100) : float(na)
+planSL = valid ? (dir == 1 ? math.min(cExt, zoneLow) - atrNow * slAtr : math.max(cExt, zoneHigh) + atrNow * slAtr) : float(na)
+tp1 = valid ? (dir == 1 ? cEnd + 0.618 * cLen : cEnd - 0.618 * cLen) : float(na)
+tp2 = valid ? bEnd : float(na)
+tp3 = valid ? aStart : float(na)
+rr1 = valid ? f_rr(planEntry, planSL, tp1) : float(na)
+rr2 = valid ? f_rr(planEntry, planSL, tp2) : float(na)
+rr3 = valid ? f_rr(planEntry, planSL, tp3) : float(na)
+tp1Ok = valid and (dir == 1 ? tp1 > planEntry : tp1 < planEntry)
+tp2Ok = valid and (dir == 1 ? tp2 > planEntry : tp2 < planEntry)
+tp3Ok = valid and (dir == 1 ? tp3 > planEntry : tp3 < planEntry)
+slOk  = valid and (dir == 1 ? planSL < planEntry : planSL > planEntry)
+
+xRight = bar_index + 12
+xMid   = bar_index + 4
+isLong = dir == 1
+zFill  = isLong ? zFillBuy : zFillSell
+zBord  = isLong ? zBordBuy : zBordSell
+eCol   = isLong ? colZoneBuy : colZoneSell
+styA   = isLong ? label.style_label_down : label.style_label_up
+styC   = isLong ? label.style_label_up : label.style_label_down
+tcDash = not valid ? hexSilver : isLong ? hexLime : hexOrange
+
+var line lnA = na
+var line lnB = na
+var line lnC = na
+var line ln618 = na
+var line ln100 = na
+var line ln127 = na
+var line ln162 = na
+var line lnSL = na
+var line lnE  = na
+var line lnTP1 = na
+var line lnTP2 = na
+var line lnTP3 = na
+var box  bxZ = na
+var box  bxRisk = na
+var label lbA = na
+var label lbB = na
+var label lbC = na
+var label lbEntry = na
+var label lbSL = na
+var label lbTP1 = na
+var label lbTP2 = na
+var label lbTP3 = na
+
+if not valid
+    if not na(lnA)
+        line.delete(lnA)
+        lnA := na
+    if not na(lnB)
+        line.delete(lnB)
+        lnB := na
+    if not na(lnC)
+        line.delete(lnC)
+        lnC := na
+    if not na(ln618)
+        line.delete(ln618)
+        ln618 := na
+    if not na(ln100)
+        line.delete(ln100)
+        ln100 := na
+    if not na(ln127)
+        line.delete(ln127)
+        ln127 := na
+    if not na(ln162)
+        line.delete(ln162)
+        ln162 := na
+    if not na(lnSL)
+        line.delete(lnSL)
+        lnSL := na
+    if not na(lnE)
+        line.delete(lnE)
+        lnE := na
+    if not na(lnTP1)
+        line.delete(lnTP1)
+        lnTP1 := na
+    if not na(lnTP2)
+        line.delete(lnTP2)
+        lnTP2 := na
+    if not na(lnTP3)
+        line.delete(lnTP3)
+        lnTP3 := na
+    if not na(bxZ)
+        box.delete(bxZ)
+        bxZ := na
+    if not na(bxRisk)
+        box.delete(bxRisk)
+        bxRisk := na
+    if not na(lbA)
+        label.delete(lbA)
+        lbA := na
+    if not na(lbB)
+        label.delete(lbB)
+        lbB := na
+    if not na(lbC)
+        label.delete(lbC)
+        lbC := na
+    if not na(lbEntry)
+        label.delete(lbEntry)
+        lbEntry := na
+    if not na(lbSL)
+        label.delete(lbSL)
+        lbSL := na
+    if not na(lbTP1)
+        label.delete(lbTP1)
+        lbTP1 := na
+    if not na(lbTP2)
+        label.delete(lbTP2)
+        lbTP2 := na
+    if not na(lbTP3)
+        label.delete(lbTP3)
+        lbTP3 := na
+else
+    if na(lnA)
+        lnA := mkLine(aBar, aStart, aeBar, aEnd, colA, 3, false)
+    else
+        line.set_xy1(lnA, aBar, aStart)
+        line.set_xy2(lnA, aeBar, aEnd)
+        line.set_color(lnA, colA)
+    if na(lnB)
+        lnB := mkLine(aeBar, aEnd, bBar, bEnd, colB, 3, false)
+    else
+        line.set_xy1(lnB, aeBar, aEnd)
+        line.set_xy2(lnB, bBar, bEnd)
+        line.set_color(lnB, colB)
+    if na(lnC)
+        lnC := mkLine(bBar, bEnd, bar_index, cExt, colC, 3, false)
+    else
+        line.set_xy1(lnC, bBar, bEnd)
+        line.set_xy2(lnC, bar_index, cExt)
+        line.set_color(lnC, colC)
+
+    if na(bxZ)
+        bxZ := mkBox(bBar, zoneHigh, xRight, zoneLow, zBord, zFill)
+    else
+        box.set_lefttop(bxZ, bBar, zoneHigh)
+        box.set_rightbottom(bxZ, xRight, zoneLow)
+        box.set_bgcolor(bxZ, zFill)
+        box.set_border_color(bxZ, zBord)
+
+    if na(lbA)
+        lbA := mkLabel(aBar, aStart, "A", colA, styA)
+        lbB := mkLabel(bBar, bEnd, "B", colB, styA)
+        lbC := mkLabel(bar_index, cExt, "C", colC, styC)
+    else
+        setLb(lbA, aBar, aStart, "A", colA)
+        label.set_style(lbA, styA)
+        setLb(lbB, bBar, bEnd, "B", colB)
+        label.set_style(lbB, styA)
+        setLb(lbC, bar_index, cExt, "C", colC)
+        label.set_style(lbC, styC)
+
+    if showFibo
+        if na(ln618)
+            ln618 := mkLine(bBar, c618, xRight, c618, fcC, 1, true)
+            ln100 := mkLine(bBar, c100, xRight, c100, fcC, 1, true)
+            ln127 := mkLine(bBar, c127, xRight, c127, fcC, 1, true)
+            ln162 := mkLine(bBar, c162, xRight, c162, fcC, 1, true)
+        else
+            setH(ln618, bBar, xRight, c618, fcC, 1)
+            setH(ln100, bBar, xRight, c100, fcC, 1)
+            setH(ln127, bBar, xRight, c127, fcC, 1)
+            setH(ln162, bBar, xRight, c162, fcC, 1)
+
+    if showLevels and slOk
+        entryTxt = (isLong ? "LONG ENTRY" : "SHORT ENTRY") + "  C=" + str.tostring(cFib * 100, "#") + "%A"
+        yTop = math.max(planEntry, planSL)
+        yBot = math.min(planEntry, planSL)
+        if na(bxRisk)
+            bxRisk := mkBox(bBar, yTop, xRight, yBot, riskBord, riskFill)
+        else
+            box.set_lefttop(bxRisk, bBar, yTop)
+            box.set_rightbottom(bxRisk, xRight, yBot)
+            box.set_bgcolor(bxRisk, riskFill)
+            box.set_border_color(bxRisk, riskBord)
+
+        if na(lnE)
+            lnE := mkLine(bBar, planEntry, xRight, planEntry, eCol, 2, false)
+        else
+            setH(lnE, bBar, xRight, planEntry, eCol, 2)
+        if na(lbEntry)
+            lbEntry := mkLabel(xMid, planEntry, entryTxt, eCol, label.style_label_left)
+        else
+            setLb(lbEntry, xMid, planEntry, entryTxt, eCol)
+
+        if na(lnSL)
+            lnSL := mkLine(bBar, planSL, xRight, planSL, colSL, 2, false)
+        else
+            setH(lnSL, bBar, xRight, planSL, colSL, 2)
+        if na(lbSL)
+            lbSL := mkLabel(xMid, planSL, "SL", colSL, label.style_label_left)
+        else
+            setLb(lbSL, xMid, planSL, "SL", colSL)
+
+        if tp1Ok
+            t1 = "TP1  0.618C  RR " + str.tostring(rr1, "#.##")
+            if na(lnTP1)
+                lnTP1 := mkLine(bBar, tp1, xRight, tp1, colTP1, 2, false)
+            else
+                setH(lnTP1, bBar, xRight, tp1, colTP1, 2)
+            if na(lbTP1)
+                lbTP1 := mkLabel(xMid, tp1, t1, colTP1, label.style_label_left)
+            else
+                setLb(lbTP1, xMid, tp1, t1, colTP1)
+        else if not na(lnTP1)
+            line.delete(lnTP1)
+            lnTP1 := na
+
+        if tp2Ok
+            t2 = "TP2  Wave B  RR " + str.tostring(rr2, "#.##")
+            if na(lnTP2)
+                lnTP2 := mkLine(bBar, tp2, xRight, tp2, colTP2, 2, false)
+            else
+                setH(lnTP2, bBar, xRight, tp2, colTP2, 2)
+            if na(lbTP2)
+                lbTP2 := mkLabel(xMid, tp2, t2, colTP2, label.style_label_left)
+            else
+                setLb(lbTP2, xMid, tp2, t2, colTP2)
+        else if not na(lnTP2)
+            line.delete(lnTP2)
+            lnTP2 := na
+
+        if tp3Ok
+            t3 = "TP3  Wave A  RR " + str.tostring(rr3, "#.##")
+            if na(lnTP3)
+                lnTP3 := mkLine(bBar, tp3, xRight, tp3, colTP3, 2, false)
+            else
+                setH(lnTP3, bBar, xRight, tp3, colTP3, 2)
+            if na(lbTP3)
+                lbTP3 := mkLabel(xMid, tp3, t3, colTP3, label.style_label_left)
+            else
+                setLb(lbTP3, xMid, tp3, t3, colTP3)
+        else if not na(lnTP3)
+            line.delete(lnTP3)
+            lnTP3 := na
+    else
+        if not na(bxRisk)
+            box.delete(bxRisk)
+            bxRisk := na
+
+plotshape(buyOnce, "Pantulan C BUY", shape.triangleup, location.belowbar, hexLime, 0, "LONG", hexLime, true, size.small)
+plotshape(sellOnce, "Pantulan C SELL", shape.triangledown, location.abovebar, hexRed, 0, "SHORT", hexRed, true, size.small)
+
+var table dash = table.new(position.top_left, 1, 1, dashBg, dashFrame, 1)
+if showDash and barstate.islast
+    body = "ELIOTWAVE ABC\n" + status
+    if valid
+        body := body + "\n" + (isLong ? "SETUP LONG  (C turun, pantul naik)" : "SETUP SHORT  (C naik, pantul turun)")
+        body := body + "\nWave A " + str.tostring(waveA, format.mintick) + "   B " + str.tostring(retrB * 100, "#.#") + "%   C " + str.tostring(cFib * 100, "#.#") + "%A"
+        if slOk
+            body := body + "\nENTRY " + str.tostring(planEntry, format.mintick) + "   SL " + str.tostring(planSL, format.mintick)
+            body := body + (tp1Ok ? "\nTP1 0.618C  " + str.tostring(tp1, format.mintick) + "  RR " + str.tostring(rr1, "#.##") : "")
+            body := body + (tp2Ok ? "\nTP2 Wave B  " + str.tostring(tp2, format.mintick) + "  RR " + str.tostring(rr2, "#.##") : "")
+            body := body + (tp3Ok ? "\nTP3 Wave A  " + str.tostring(tp3, format.mintick) + "  RR " + str.tostring(rr3, "#.##") : "")
+    table.cell(dash, 0, 0, body, text_color = tcDash, text_halign = text.align_left, text_size = size.small)
+
+if buyOnce
+    alert("ELIOTWAVE ABC LONG " + syminfo.ticker + " " + timeframe.period + " ENTRY " + str.tostring(planEntry) + " SL " + str.tostring(planSL) + " TP2 RR " + str.tostring(rr2, "#.##"), alert.freq_once_per_bar_close)
+if sellOnce
+    alert("ELIOTWAVE ABC SHORT " + syminfo.ticker + " " + timeframe.period + " ENTRY " + str.tostring(planEntry) + " SL " + str.tostring(planSL) + " TP2 RR " + str.tostring(rr2, "#.##"), alert.freq_once_per_bar_close)
+
+alertcondition(buyOnce, title = "LONG pantulan C", message = "ELIOTWAVE ABC LONG {{ticker}} {{interval}} — entri pantulan Wave C")
+alertcondition(sellOnce, title = "SHORT pantulan C", message = "ELIOTWAVE ABC SHORT {{ticker}} {{interval}} — entri pantulan Wave C")
