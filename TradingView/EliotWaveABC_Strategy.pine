@@ -53,6 +53,28 @@ colC         = input.color(#FFD700, "Warna Wave C", group = grpView)
 colZoneBuy   = input.color(#228B22, "Zona C BUY", group = grpView)
 colZoneSell  = input.color(#B22222, "Zona C SELL", group = grpView)
 
+hexLime  = #00FF7F
+hexRed   = #FF4500
+hexSL    = #FF4D4D
+hexTP1   = #00E676
+hexTP2   = #00BCD4
+hexTP3   = #FFD54F
+transBg  = color.new(#000000, 100)
+zFillBuy = color.new(colZoneBuy, 85)
+zFillSell = color.new(colZoneSell, 85)
+zBordBuy = color.new(colZoneBuy, 40)
+zBordSell = color.new(colZoneSell, 40)
+fcC      = color.new(colC, 35)
+
+mkLine(x1, y1, x2, y2, col, w, dotted) =>
+    line.new(x1, y1, x2, y2, xloc.bar_index, extend.none, col, dotted ? line.style_dotted : line.style_solid, w)
+
+mkLabel(x, y, txt, fg, sty) =>
+    label.new(x, y, txt, xloc.bar_index, yloc.price, transBg, sty, fg, size.small)
+
+mkBox(x1, y1, x2, y2, bord, fill) =>
+    box.new(x1, y1, x2, y2, bord, 1, line.style_dotted, extend.none, xloc.bar_index, fill)
+
 type Pivot
     int   dir
     float price
@@ -366,8 +388,8 @@ if strategy.position_size < 0 and not na(posR) and posR > 0
         posSL := newSL
         strategy.exit("XS", from_entry = "Short", stop = posSL, limit = posTP)
 
-plotshape(buyOnce, title = "Pantulan C BUY", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.small, text = "C BUY", textcolor = color.lime)
-plotshape(sellOnce, title = "Pantulan C SELL", style = shape.triangledown, location = location.abovebar, color = color.orangered, size = size.small, text = "C SELL", textcolor = color.orangered)
+plotshape(buyOnce, "Pantulan C BUY", shape.triangleup, location.belowbar, hexLime, 0, "LONG", hexLime, true, size.small)
+plotshape(sellOnce, "Pantulan C SELL", shape.triangledown, location.abovebar, hexRed, 0, "SHORT", hexRed, true, size.small)
 
 var line lnA = na
 var line lnB = na
@@ -457,50 +479,54 @@ if showDraw
             label.delete(lbTP3)
             lbTP3 := na
     else
+        styA = dir == 1 ? label.style_label_down : label.style_label_up
+        styC = dir == 1 ? label.style_label_up : label.style_label_down
+        zFill = dir == 1 ? zFillBuy : zFillSell
+        zBord = dir == 1 ? zBordBuy : zBordSell
+        eCol = dir == 1 ? colZoneBuy : colZoneSell
+        xR = bar_index + 12
+        xM = bar_index + 4
         if na(lnA)
-            lnA := line.new(aBar, aStart, aeBar, aEnd, color = colA, width = 3)
+            lnA := mkLine(aBar, aStart, aeBar, aEnd, colA, 3, false)
         else
             line.set_xy1(lnA, aBar, aStart)
             line.set_xy2(lnA, aeBar, aEnd)
         if na(lnB)
-            lnB := line.new(aeBar, aEnd, bBar, bEnd, color = colB, width = 3)
+            lnB := mkLine(aeBar, aEnd, bBar, bEnd, colB, 3, false)
         else
             line.set_xy1(lnB, aeBar, aEnd)
             line.set_xy2(lnB, bBar, bEnd)
         if na(lnC)
-            lnC := line.new(bBar, bEnd, bar_index, cExt, color = colC, width = 3)
+            lnC := mkLine(bBar, bEnd, bar_index, cExt, colC, 3, false)
         else
             line.set_xy1(lnC, bBar, bEnd)
             line.set_xy2(lnC, bar_index, cExt)
-        zFill = dir == 1 ? color.new(colZoneBuy, 85) : color.new(colZoneSell, 85)
-        zBord = dir == 1 ? color.new(colZoneBuy, 40) : color.new(colZoneSell, 40)
         if na(bxZ)
-            bxZ := box.new(bBar, zoneHigh, bar_index + 8, zoneLow, border_color = zBord, bgcolor = zFill, border_style = line.style_dotted)
+            bxZ := mkBox(bBar, zoneHigh, bar_index + 8, zoneLow, zBord, zFill)
         else
             box.set_lefttop(bxZ, bBar, zoneHigh)
             box.set_rightbottom(bxZ, bar_index + 8, zoneLow)
             box.set_bgcolor(bxZ, zFill)
             box.set_border_color(bxZ, zBord)
         if showFibo
-            fc = color.new(colC, 35)
             if na(ln618)
-                ln618 := line.new(bBar, c618, bar_index + 8, c618, color = fc, style = line.style_dotted)
-                ln100 := line.new(bBar, c100, bar_index + 8, c100, color = fc, style = line.style_dotted)
-                ln127 := line.new(bBar, c127, bar_index + 8, c127, color = fc, style = line.style_dotted)
-                ln162 := line.new(bBar, c162, bar_index + 8, c162, color = fc, style = line.style_dotted)
+                ln618 := mkLine(bBar, c618, xR, c618, fcC, 1, true)
+                ln100 := mkLine(bBar, c100, xR, c100, fcC, 1, true)
+                ln127 := mkLine(bBar, c127, xR, c127, fcC, 1, true)
+                ln162 := mkLine(bBar, c162, xR, c162, fcC, 1, true)
             else
                 line.set_xy1(ln618, bBar, c618)
-                line.set_xy2(ln618, bar_index + 8, c618)
+                line.set_xy2(ln618, xR, c618)
                 line.set_xy1(ln100, bBar, c100)
-                line.set_xy2(ln100, bar_index + 8, c100)
+                line.set_xy2(ln100, xR, c100)
                 line.set_xy1(ln127, bBar, c127)
-                line.set_xy2(ln127, bar_index + 8, c127)
+                line.set_xy2(ln127, xR, c127)
                 line.set_xy1(ln162, bBar, c162)
-                line.set_xy2(ln162, bar_index + 8, c162)
+                line.set_xy2(ln162, xR, c162)
         if na(lbA)
-            lbA := label.new(aBar, aStart, "A", color = color.new(color.black, 100), textcolor = colA, style = dir == 1 ? label.style_label_down : label.style_label_up, size = size.small)
-            lbB := label.new(bBar, bEnd, "B", color = color.new(color.black, 100), textcolor = colB, style = dir == 1 ? label.style_label_down : label.style_label_up, size = size.small)
-            lbC := label.new(bar_index, cExt, "C  zona pantulan", color = color.new(color.black, 100), textcolor = colC, style = dir == 1 ? label.style_label_up : label.style_label_down, size = size.small)
+            lbA := mkLabel(aBar, aStart, "A", colA, styA)
+            lbB := mkLabel(bBar, bEnd, "B", colB, styA)
+            lbC := mkLabel(bar_index, cExt, "C", colC, styC)
         else
             label.set_xy(lbA, aBar, aStart)
             label.set_textcolor(lbA, colA)
@@ -509,65 +535,61 @@ if showDraw
             label.set_xy(lbC, bar_index, cExt)
             label.set_textcolor(lbC, colC)
         if slOkW
-            xR = bar_index + 12
-            xM = bar_index + 4
-            bgT = color.new(#000000, 100)
-            eCol = dir == 1 ? colZoneBuy : colZoneSell
             eTxt = (dir == 1 ? "LONG ENTRY" : "SHORT ENTRY") + "  C=" + str.tostring(cFib * 100, "#") + "%A"
             if na(lnE)
-                lnE := line.new(bBar, planEntry, xR, planEntry, color = eCol, width = 2)
+                lnE := mkLine(bBar, planEntry, xR, planEntry, eCol, 2, false)
             else
                 line.set_xy1(lnE, bBar, planEntry)
                 line.set_xy2(lnE, xR, planEntry)
                 line.set_color(lnE, eCol)
             if na(lbEntry)
-                lbEntry := label.new(xM, planEntry, eTxt, color = bgT, textcolor = eCol, style = label.style_label_left, size = size.small)
+                lbEntry := mkLabel(xM, planEntry, eTxt, eCol, label.style_label_left)
             else
                 label.set_xy(lbEntry, xM, planEntry)
                 label.set_text(lbEntry, eTxt)
                 label.set_textcolor(lbEntry, eCol)
             if na(lnSL)
-                lnSL := line.new(bBar, planSL, xR, planSL, color = #FF4D4D, width = 2)
+                lnSL := mkLine(bBar, planSL, xR, planSL, hexSL, 2, false)
             else
                 line.set_xy1(lnSL, bBar, planSL)
                 line.set_xy2(lnSL, xR, planSL)
             if na(lbSL)
-                lbSL := label.new(xM, planSL, "SL", color = bgT, textcolor = #FF4D4D, style = label.style_label_left, size = size.small)
+                lbSL := mkLabel(xM, planSL, "SL", hexSL, label.style_label_left)
             else
                 label.set_xy(lbSL, xM, planSL)
             if tp1OkW
                 t1s = "TP1  0.618C  RR " + str.tostring(rr1w, "#.##")
                 if na(lnTP1)
-                    lnTP1 := line.new(bBar, tp1w, xR, tp1w, color = #00E676, width = 2)
+                    lnTP1 := mkLine(bBar, tp1w, xR, tp1w, hexTP1, 2, false)
                 else
                     line.set_xy1(lnTP1, bBar, tp1w)
                     line.set_xy2(lnTP1, xR, tp1w)
                 if na(lbTP1)
-                    lbTP1 := label.new(xM, tp1w, t1s, color = bgT, textcolor = #00E676, style = label.style_label_left, size = size.small)
+                    lbTP1 := mkLabel(xM, tp1w, t1s, hexTP1, label.style_label_left)
                 else
                     label.set_xy(lbTP1, xM, tp1w)
                     label.set_text(lbTP1, t1s)
             if tp2OkW
                 t2s = "TP2  Wave B  RR " + str.tostring(rr2w, "#.##")
                 if na(lnTP2)
-                    lnTP2 := line.new(bBar, tp2w, xR, tp2w, color = #00BCD4, width = 2)
+                    lnTP2 := mkLine(bBar, tp2w, xR, tp2w, hexTP2, 2, false)
                 else
                     line.set_xy1(lnTP2, bBar, tp2w)
                     line.set_xy2(lnTP2, xR, tp2w)
                 if na(lbTP2)
-                    lbTP2 := label.new(xM, tp2w, t2s, color = bgT, textcolor = #00BCD4, style = label.style_label_left, size = size.small)
+                    lbTP2 := mkLabel(xM, tp2w, t2s, hexTP2, label.style_label_left)
                 else
                     label.set_xy(lbTP2, xM, tp2w)
                     label.set_text(lbTP2, t2s)
             if tp3OkW
                 t3s = "TP3  Wave A  RR " + str.tostring(rr3w, "#.##")
                 if na(lnTP3)
-                    lnTP3 := line.new(bBar, tp3w, xR, tp3w, color = #FFD54F, width = 2)
+                    lnTP3 := mkLine(bBar, tp3w, xR, tp3w, hexTP3, 2, false)
                 else
                     line.set_xy1(lnTP3, bBar, tp3w)
                     line.set_xy2(lnTP3, xR, tp3w)
                 if na(lbTP3)
-                    lbTP3 := label.new(xM, tp3w, t3s, color = bgT, textcolor = #FFD54F, style = label.style_label_left, size = size.small)
+                    lbTP3 := mkLabel(xM, tp3w, t3s, hexTP3, label.style_label_left)
                 else
                     label.set_xy(lbTP3, xM, tp3w)
                     label.set_text(lbTP3, t3s)
